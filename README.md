@@ -56,33 +56,8 @@ export SERVICE_PORT=80
 export SERVICE_NAME=${DEPLOYMENT_NAME}-svc
 
 # Create deployment
-kubectl apply -f - <<-EOF
-apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
-kind: Deployment
-metadata:
-  name: ${DEPLOYMENT_NAME}
-spec:
-  selector:
-    matchLabels:
-      app: ${DEPLOYMENT_NAME}
-  replicas: 1 # instances count starts with 1
-  template:
-    metadata:
-      labels:
-        app: ${DEPLOYMENT_NAME}
-    spec:
-      containers:
-      - name: ${DEPLOYMENT_NAME}
-        image: ${FC_DEMO_IMAGE}
-        resources:
-          limits:
-            cpu: 500m
-          requests:
-            cpu: 200m
-EOF
-
 # Expose your deployment. WARNING: it will cost you some credit.
-kubectl expose deployment ${DEPLOYMENT_NAME} --port=${SERVICE_PORT} --target-port=${CONTAINER_PORT} --type=LoadBalancer --name=${SERVICE_NAME}
+/bin/bash ./hack/deploy_to_kubernetes.sh
 
 # Verify your deployment is available.
 curl -L "http://`kubectl get svc | grep ${SERVICE_NAME} | awk '{print $4}'`:${SERVICE_PORT}/2016-08-15/proxy/CustomContainerDemo/java-springboot-http/"
@@ -91,28 +66,7 @@ curl -L "http://`kubectl get svc | grep ${SERVICE_NAME} | awk '{print $4}'`:${SE
 export SCALED_OBJECT_NAME=cron-scaled-obj
 
 # Create ScaleObject
-kubectl apply -f - <<-EOF
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: ${SCALED_OBJECT_NAME}
-spec:
-  scaleTargetRef:
-    name: ${DEPLOYMENT_NAME}
-  minReplicaCount: 0
-  maxReplicaCount: 10
-  triggers:
-  - type: cron
-    metadata:
-      timezone: Asia/Shanghai  # The acceptable values would be a value from the IANA Time Zone Database.
-      start: 15 * * * *        # Every hour on the 15th minute
-      end: 30 * * * *          # Every hour on the 30th minute
-      desiredReplicas: "5"
-  - type: cpu
-    metadata:
-      type: Utilization
-      value: "50"
-EOF
+/bin/bash ./hack/create_cpu_cron_scaledobject.sh
 
 ## Deployment replicas will be 5 between 15 and 30 every hour
 kubectl get deployments.apps ${DEPLOYMENT_NAME}
@@ -120,21 +74,11 @@ kubectl get deployments.apps ${DEPLOYMENT_NAME}
 
 ## Put some stress on deployment
 ## Add 30qps stress for 120s
-export DURATION=120
-
-while [ ${DURATION} -gt 0 ]; do\
-  let DURATION=${DURATION}-1;\
-  QPS=30;\
-  while [ ${QPS} -gt 0 ]; do\
-    let QPS=${QPS}-1;\
-    curl -sL "http://`kubectl get svc | grep ${SERVICE_NAME} | awk '{print $4}'`:${SERVICE_PORT}/stress" > /dev/null & ;\
-  done;\
-done;
+/bin/bash ./hack/put_stress_on_deployment.sh 2>&1 > /dev/null &
 
 ## We will see all pods' CPU usage are increasing
 ## And pods count will reach limit in a while
 kubectl top pod | grep ${DEPLOYMENT_NAME}
-
 
 ```
 
